@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -21,19 +21,29 @@ func main() {
 	fmt.Printf("%.2fs elapsed\n", time.Since(start).Seconds())
 }
 
-func fetch(url string, ch chan<- string) {
+func fetch(uri string, ch chan<- string) {
 	start := time.Now()
-	resp, err := http.Get(url)
+	resp, err := http.Get(uri)
 	if err != nil {
 		ch <- fmt.Sprint(err) // send to channel ch
 		return
 	}
-	nbytes, err := io.Copy(ioutil.Discard, resp.Body)
-	resp.Body.Close() // don't leak resources
+
+	f, err := os.Create(url.QueryEscape(uri))
 	if err != nil {
-		ch <- fmt.Sprintf("while reading %s: %v", url, err)
+		ch <- err.Error()
+	}
+	nbytes, err := io.Copy(f, resp.Body)
+	resp.Body.Close() // don't leak resources
+
+	if closeErr := f.Close(); err == nil { // example from chapter 5.8, gopl.io/ch5/fetch
+		err = closeErr
+	}
+
+	if err != nil {
+		ch <- fmt.Sprintf("while reading %s: %v", uri, err)
 		return
 	}
 	secs := time.Since(start).Seconds()
-	ch <- fmt.Sprintf("%.2fs %7d %s", secs, nbytes, url)
+	ch <- fmt.Sprintf("%.2fs  %7d  %s", secs, nbytes, uri)
 }
